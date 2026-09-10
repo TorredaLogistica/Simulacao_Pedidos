@@ -311,7 +311,15 @@ def excel_saida(resumo, cenarios, curva_abc, detalhe_curva, detalhe):
 st.markdown("""
 <style>
 .block-container{padding-top:1.2rem;padding-bottom:2rem}
-[data-testid="stMetric"]{background:#fff;border:1px solid #dce3ed;border-radius:10px;padding:14px}
+[data-testid="stMetric"]{background:#fff;border:1px solid #dce3ed;border-radius:10px;padding:14px;overflow:visible}
+[data-testid="stMetricValue"]{overflow:visible}
+[data-testid="stMetricValue"] > div{
+    font-size:clamp(1.55rem,2.25vw,2.5rem);
+    line-height:1.15;
+    white-space:nowrap;
+    overflow:visible;
+    text-overflow:clip;
+}
 .titulo{font-size:2rem;font-weight:800;color:#172B4D;margin:0}.sub{font-size:2.5rem;font-weight:600;color:#687386;margin-top:0;line-height:1.25}
 </style>
 """, unsafe_allow_html=True)
@@ -440,9 +448,9 @@ a, c1, c2 = cenarios.iloc[0], cenarios.iloc[1], cenarios.iloc[2]
 st.caption(f"Filtro atual: Tipo da OV **{', '.join(tipos_ov) if tipos_ov else 'Todos'}** | Ano **{', '.join(map(str, anos)) if anos else 'Todos'}** | Mês **{', '.join(meses_selecionados) if meses_selecionados else 'Todos'}** | Perfil **{perfil}** | Loja(s): **{', '.join(lojas) if lojas else 'Todas'}** | Competência: **{coluna_competencia}**")
 
 m1,m2,m3,m4 = st.columns(4)
-m1.metric("Pedidos encontrados", f"{int(resumo['Contagem Número do pedido'].sum())}")
-m2.metric("Lojas selecionadas", f"{bf['loja'].nunique()}")
-m3.metric("Média mensal atual", f"{a['Pedidos/mês']:.0f}")
+m1.metric("Pedidos encontrados", f"{int(resumo['Contagem Número do pedido'].sum()):,}".replace(",", "."))
+m2.metric("Lojas selecionadas", f"{int(bf['loja'].nunique()):,}".replace(",", "."))
+m3.metric("Média mensal atual", f"{float(a['Pedidos/mês']):,.0f}".replace(",", "."))
 m4.metric("Custo anual atual", brl(a["Custo/ano"]))
 
 aba1,aba2,aba3,aba4 = st.tabs(["Cenário atual","Comparativo financeiro","Detalhamento","Análise Gerencial"])
