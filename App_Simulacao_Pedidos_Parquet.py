@@ -2,7 +2,6 @@ import io
 import re
 import unicodedata
 from pathlib import Path
-
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -477,8 +476,8 @@ with aba1:
     st.markdown("#### Resumo dos cenários para a seleção atual")
     r1,r2,r3 = st.columns(3)
     r1.info(f"**Cenário Atual**  \nMédia mês: **{a['Pedidos/mês']:.0f} pedidos | {brl(a['Custo/mês'])}**  \nMédia Ano: **{a['Pedidos/ano']:.0f} pedidos | {brl(a['Custo/ano'])}**")
-    r2.success(f"**Cenário 1: até 1 pedido/mês**  \nMédia mês: **{c1['Pedidos/mês']:.0f} pedido | {brl(c1['Custo/mês'])}**  \nMédia Ano: **{c1['Pedidos/ano']:.0f} pedidos | {brl(c1['Custo/ano'])}**  \nEconomia Ano: **{brl(c1['Economia/ano'])}**")
-    r3.warning(f"**Cenário 2: até 2 pedidos/mês**  \nMédia mês: **{c2['Pedidos/mês']:.0f} pedidos | {brl(c2['Custo/mês'])}**  \nMédia Ano: **{c2['Pedidos/ano']:.0f} pedidos | {brl(c2['Custo/ano'])}**  \nEconomia Ano: **{brl(c2['Economia/ano'])}**")
+    r2.success(f"**Cenário 1: até 1 pedido/mês**  \nMédia mês: **{c1['Pedidos/mês']:.0f} pedido | {brl(c1['Custo/mês'])}**  \nMédia Ano: **{c1['Pedidos/ano']:.0f} pedidos | {brl(c1['Custo/ano'])}**  \nEconomia Ano: **{brl(c1['Economia/ano'])}**  \nEconomia Mês: **{brl(c1['Economia/ano'] / 12)}**")
+    r3.warning(f"**Cenário 2: até 2 pedidos/mês**  \nMédia mês: **{c2['Pedidos/mês']:.0f} pedidos | {brl(c2['Custo/mês'])}**  \nMédia Ano: **{c2['Pedidos/ano']:.0f} pedidos | {brl(c2['Custo/ano'])}**  \nEconomia Ano: **{brl(c2['Economia/ano'])}**  \nEconomia Mês: **{brl(c2['Economia/ano'] / 12)}**")
 
 with aba2:
     st.subheader("Comparativo financeiro")
