@@ -444,6 +444,32 @@ cenarios = calcular(bf, resumo)
 curva_abc, detalhe_curva = calcular_curva_abc(bf)
 a, c1, c2 = cenarios.iloc[0], cenarios.iloc[1], cenarios.iloc[2]
 
+# Base exclusiva dos cards de resumo dos cenários: ignora somente o filtro de mês.
+b_cenario_pedido = b_ano if not pedido_pesquisa else b_ano[
+    b_ano["pedido"].astype(str).str.contains(
+        pedido_pesquisa, case=False, na=False, regex=False
+    )
+]
+b_cenario_unicidade = (
+    b_cenario_pedido.drop_duplicates(subset=["pedido"], keep="first").copy()
+    if apenas_pedidos_unicos else b_cenario_pedido
+)
+b_cenario_tipo = b_cenario_unicidade if not tipos_doc else b_cenario_unicidade[
+    b_cenario_unicidade["tipo_doc_vendas"].isin(tipos_doc)
+]
+b_cenario_centro = b_cenario_tipo if not centros_distribuicao else b_cenario_tipo[
+    b_cenario_tipo["centro_distribuicao"].isin(centros_distribuicao)
+]
+b_cenario_perfil = b_cenario_centro if perfil == "Todos" else b_cenario_centro[
+    b_cenario_centro["perfil"].eq(perfil)
+]
+bf_cenarios = b_cenario_perfil if not lojas else b_cenario_perfil[
+    b_cenario_perfil["loja"].isin(lojas)
+]
+resumo_cenarios = resumo_mensal(bf_cenarios)
+cenarios_fechados = calcular(bf_cenarios, resumo_cenarios)
+a_fechado, c1_fechado, c2_fechado = cenarios_fechados.iloc[0], cenarios_fechados.iloc[1], cenarios_fechados.iloc[2]
+
 st.caption(f"Filtro atual: Tipo da OV **{', '.join(tipos_ov) if tipos_ov else 'Todos'}** | Ano **{', '.join(map(str, anos)) if anos else 'Todos'}** | Mês **{', '.join(meses_selecionados) if meses_selecionados else 'Todos'}** | Perfil **{perfil}** | Loja(s): **{', '.join(lojas) if lojas else 'Todas'}** | Competência: **{coluna_competencia}**")
 
 m1,m2,m3,m4 = st.columns(4)
@@ -475,9 +501,9 @@ with aba1:
 
     st.markdown("#### Resumo dos cenários para a seleção atual")
     r1,r2,r3 = st.columns(3)
-    r1.info(f"**Cenário Atual**  \nMédia mês: **{a['Pedidos/mês']:.0f} pedidos | {brl(a['Custo/mês'])}**  \nMédia Ano: **{a['Pedidos/ano']:.0f} pedidos | {brl(a['Custo/ano'])}**")
-    r2.success(f"**Cenário 1: até 1 pedido/mês**  \nMédia mês: **{c1['Pedidos/mês']:.0f} pedido | {brl(c1['Custo/mês'])}**  \nMédia Ano: **{c1['Pedidos/ano']:.0f} pedidos | {brl(c1['Custo/ano'])}**  \nEconomia Ano: **{brl(c1['Economia/ano'])}**  \nEconomia Mês: **{brl(c1['Economia/ano'] / 12)}**")
-    r3.warning(f"**Cenário 2: até 2 pedidos/mês**  \nMédia mês: **{c2['Pedidos/mês']:.0f} pedidos | {brl(c2['Custo/mês'])}**  \nMédia Ano: **{c2['Pedidos/ano']:.0f} pedidos | {brl(c2['Custo/ano'])}**  \nEconomia Ano: **{brl(c2['Economia/ano'])}**  \nEconomia Mês: **{brl(c2['Economia/ano'] / 12)}**")
+    r1.info(f"**Cenário Atual**  \nMédia mês: **{a_fechado['Pedidos/mês']:.0f} pedidos | {brl(a_fechado['Custo/mês'])}**  \nMédia Ano: **{a_fechado['Pedidos/ano']:.0f} pedidos | {brl(a_fechado['Custo/ano'])}**")
+    r2.success(f"**Cenário 1: até 1 pedido/mês**  \nMédia mês: **{c1_fechado['Pedidos/mês']:.0f} pedido | {brl(c1_fechado['Custo/mês'])}**  \nMédia Ano: **{c1_fechado['Pedidos/ano']:.0f} pedidos | {brl(c1_fechado['Custo/ano'])}**  \nEconomia Ano: **{brl(c1_fechado['Economia/ano'])}**  \nEconomia Mês: **{brl(c1_fechado['Economia/ano'] / 12)}**")
+    r3.warning(f"**Cenário 2: até 2 pedidos/mês**  \nMédia mês: **{c2_fechado['Pedidos/mês']:.0f} pedidos | {brl(c2_fechado['Custo/mês'])}**  \nMédia Ano: **{c2_fechado['Pedidos/ano']:.0f} pedidos | {brl(c2_fechado['Custo/ano'])}**  \nEconomia Ano: **{brl(c2_fechado['Economia/ano'])}**  \nEconomia Mês: **{brl(c2_fechado['Economia/ano'] / 12)}**")
 
 with aba2:
     st.subheader("Comparativo financeiro")
