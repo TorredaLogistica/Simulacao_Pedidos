@@ -499,7 +499,7 @@ with aba1:
         fig.update_layout(title="Quantidade de pedidos por mês",xaxis_title="Mês",yaxis_title="Pedidos",showlegend=False,margin=dict(l=20,r=20,t=55,b=30))
         st.plotly_chart(fig,use_container_width=True)
 
-    st.markdown("#### Resumo dos cenários para a seleção atual")
+    st.markdown("#### Resumo dos cenários")
     r1,r2,r3 = st.columns(3)
     r1.info(f"**Cenário Atual**  \nMédia mês: **{a_fechado['Pedidos/mês']:.0f} pedidos | {brl(a_fechado['Custo/mês'])}**  \nMédia Ano: **{a_fechado['Pedidos/ano']:.0f} pedidos | {brl(a_fechado['Custo/ano'])}**")
     r2.success(f"**Cenário 1: até 1 pedido/mês**  \nMédia mês: **{c1_fechado['Pedidos/mês']:.0f} pedido | {brl(c1_fechado['Custo/mês'])}**  \nMédia Ano: **{c1_fechado['Pedidos/ano']:.0f} pedidos | {brl(c1_fechado['Custo/ano'])}**  \nEconomia Ano: **{brl(c1_fechado['Economia/ano'])}**  \nEconomia Mês: **{brl(c1_fechado['Economia/ano'] / 12)}**")
