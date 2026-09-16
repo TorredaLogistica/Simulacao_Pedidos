@@ -137,8 +137,8 @@ def preparar(df):
     """Prepara a nova base usando exclusivamente a guia Base."""
     colunas_necessarias = {
         "tipo_doc_vendas": ["Tipo Doc"],
-        # A identificação e a contagem das lojas passam a usar Cód Cliente.
-        "loja": ["Cód Cliente", "Cod Cliente", "CÓD CLIENTE", "COD CLIENTE"],
+        "cod_cliente": ["Cód Cliente", "Cod Cliente", "CÓD CLIENTE", "COD CLIENTE"],
+        "loja_sap": ["LOJA (SAP)"],
         "perfil_origem": ["SUB_CANAL"],
         "centro_distribuicao": ["CD Origem", "Codigo CD"],
         "pedido": ["PEDIDO"],
@@ -155,7 +155,10 @@ def preparar(df):
 
     datas = pd.to_datetime(b["competencia"], errors="coerce")
     b["tipo_doc_vendas"] = b["tipo_doc_vendas"].fillna("").astype(str).str.strip()
-    b["loja"] = b["loja"].fillna("").astype(str).str.strip()
+    b["cod_cliente"] = b["cod_cliente"].fillna("").astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
+    b["loja_sap"] = b["loja_sap"].fillna("").astype(str).str.strip()
+    # A coluna operacional "loja" será definida pela opção de visualização escolhida pelo usuário.
+    b["loja"] = b["cod_cliente"]
     b["centro_distribuicao"] = b["centro_distribuicao"].fillna("").astype(str).str.strip().str.title()
     b["pedido"] = b["pedido"].fillna("").astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
     b["tipo_ov"] = b["tipo_ov"].map(normalizar)
@@ -175,7 +178,7 @@ def preparar(df):
     # vinculando Documento SD ao campo PEDIDO da guia Base.
 
     mascara_perfil = b["perfil"].isin(["AA", "LP"])
-    mascara_chaves = b["loja"].ne("") & b["pedido"].ne("")
+    mascara_chaves = (b["cod_cliente"].ne("") | b["loja_sap"].ne("")) & b["pedido"].ne("")
     mascara_data = datas.notna() & datas.le(pd.Timestamp(2026, 7, 31))
     mascara_custo = b["custo_faturamento"].gt(0)
     mascara_tipo_ov = b["tipo_ov"].ne("")
@@ -358,6 +361,18 @@ if pedidos.empty:
     )
     st.stop()
 
+st.sidebar.markdown("## Visualização")
+visao_loja = st.sidebar.radio(
+    "Selecione a visão",
+    ["🔴  Cód Cliente", "🏬  LOJA (SAP)"],
+    index=0,
+    label_visibility="collapsed",
+)
+coluna_visao = "cod_cliente" if visao_loja.startswith("🔴") else "loja_sap"
+rotulo_visao = "Cód Cliente" if coluna_visao == "cod_cliente" else "LOJA (SAP)"
+pedidos["loja"] = pedidos[coluna_visao].fillna("").astype(str).str.strip()
+pedidos = pedidos[pedidos["loja"].ne("")].copy()
+
 st.sidebar.markdown("## Filtros")
 
 arquivo_descricoes = arq
@@ -433,10 +448,10 @@ bp = b_centro if perfil == "Todos" else b_centro[b_centro["perfil"].eq(perfil)]
 
 lojas_lista = sorted(bp["loja"].unique())
 lojas = st.sidebar.multiselect(
-    "Cód Cliente",
+    "Identificação da loja",
     lojas_lista,
     default=[],
-    placeholder="Selecione um ou mais códigos de cliente",
+    placeholder="Selecione uma ou mais lojas",
 )
 bf = bp if not lojas else bp[bp["loja"].isin(lojas)]
 
@@ -471,11 +486,11 @@ resumo_cenarios = resumo_mensal(bf_cenarios)
 cenarios_fechados = calcular(bf_cenarios, resumo_cenarios)
 a_fechado, c1_fechado, c2_fechado = cenarios_fechados.iloc[0], cenarios_fechados.iloc[1], cenarios_fechados.iloc[2]
 
-st.caption(f"Filtro atual: Tipo da OV **{', '.join(tipos_ov) if tipos_ov else 'Todos'}** | Ano **{', '.join(map(str, anos)) if anos else 'Todos'}** | Mês **{', '.join(meses_selecionados) if meses_selecionados else 'Todos'}** | Perfil **{perfil}** | Loja(s): **{', '.join(lojas) if lojas else 'Todas'}** | Competência: **{coluna_competencia}**")
+st.caption(f"Filtro atual: Tipo da OV **{', '.join(tipos_ov) if tipos_ov else 'Todos'}** | Ano **{', '.join(map(str, anos)) if anos else 'Todos'}** | Mês **{', '.join(meses_selecionados) if meses_selecionados else 'Todos'}** | Perfil **{perfil}** | {rotulo_visao}: **{', '.join(lojas) if lojas else 'Todos'}** | Competência: **{coluna_competencia}**")
 
 m1,m2,m3,m4 = st.columns(4)
 m1.metric("Pedidos encontrados", f"{int(resumo['Contagem Número do pedido'].sum()):,}".replace(",", "."))
-m2.metric("Lojas selecionadas", f"{int(bf['loja'].nunique()):,}".replace(",", "."))
+m2.metric(f"{rotulo_visao} selecionados", f"{int(bf['loja'].nunique()):,}".replace(",", "."))
 m3.metric("Média mensal atual", f"{float(a['Pedidos/mês']):,.0f}".replace(",", "."))
 m4.metric("Custo anual atual", brl(a["Custo/ano"]))
 
@@ -577,8 +592,8 @@ with aba2:
                 "Maior quantidade BG": ("qtd_simcards_pedido", "max"),
             }
         ).sort_values(["Quantidade de pedidos", "loja"], ascending=[False, True])
-        st.markdown(f"##### Lojas da Curva {curva_selecionada}")
-        st.caption(f"Total exibido: {len(lojas_resumo)} loja(s). Clique em outra barra para atualizar.")
+        st.markdown(f"##### {rotulo_visao} da Curva {curva_selecionada}")
+        st.caption(f"Total exibido: {len(lojas_resumo)} registro(s) de {rotulo_visao}. Clique em outra barra para atualizar.")
         st.dataframe(lojas_resumo, use_container_width=True, hide_index=True)
     else:
         st.info("Clique em uma barra A, B, C ou D para visualizar abaixo as lojas correspondentes.")
