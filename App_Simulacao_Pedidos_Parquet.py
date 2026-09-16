@@ -137,7 +137,8 @@ def preparar(df):
     """Prepara a nova base usando exclusivamente a guia Base."""
     colunas_necessarias = {
         "tipo_doc_vendas": ["Tipo Doc"],
-        "loja": ["LOJA (SAP)", "CLIENTE"],
+        # A identificação e a contagem das lojas passam a usar Cód Cliente.
+        "loja": ["Cód Cliente", "Cod Cliente", "CÓD CLIENTE", "COD CLIENTE"],
         "perfil_origem": ["SUB_CANAL"],
         "centro_distribuicao": ["CD Origem", "Codigo CD"],
         "pedido": ["PEDIDO"],
@@ -432,10 +433,10 @@ bp = b_centro if perfil == "Todos" else b_centro[b_centro["perfil"].eq(perfil)]
 
 lojas_lista = sorted(bp["loja"].unique())
 lojas = st.sidebar.multiselect(
-    "Identificação da loja",
+    "Cód Cliente",
     lojas_lista,
     default=[],
-    placeholder="Selecione uma ou mais lojas",
+    placeholder="Selecione um ou mais códigos de cliente",
 )
 bf = bp if not lojas else bp[bp["loja"].isin(lojas)]
 
