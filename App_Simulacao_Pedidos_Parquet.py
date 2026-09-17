@@ -266,7 +266,12 @@ def calcular(base, resumo):
     atual_custo_mes = float(resumo["Soma de Custo Faturamento"].sum()) / meses
     atual_custo_ano = atual_custo_mes * 12
 
-    por_loja = base.groupby(["perfil", "loja"]).agg(
+    # O teto dos cenários deve ser aplicado no mesmo nível em que a operação é segmentada.
+    # Incluir Tipo Doc Vendas evita que o consolidado una movimentos LP/ZDEA/ZBRI/ZBRL
+    # do mesmo cliente antes de aplicar os limites de 1 ou 2 pedidos por mês.
+    # Assim, o consolidado torna-se aditivo em relação às visões segmentadas.
+    chaves_cenario = ["perfil", "tipo_doc_vendas", "loja"]
+    por_loja = base.groupby(chaves_cenario, dropna=False).agg(
         pedidos_total=("pedido", "count"),
         custo_unitario=("custo_faturamento", lambda x: float(x.mode().iloc[0]) if not x.mode().empty else float(x.mean())),
     ).reset_index()
@@ -448,10 +453,10 @@ bp = b_centro if perfil == "Todos" else b_centro[b_centro["perfil"].eq(perfil)]
 
 lojas_lista = sorted(bp["loja"].unique())
 lojas = st.sidebar.multiselect(
-    "Identificação da loja",
+    rotulo_visao,
     lojas_lista,
     default=[],
-    placeholder="Selecione uma ou mais lojas",
+    placeholder=f"Selecione um ou mais valores de {rotulo_visao}",
 )
 bf = bp if not lojas else bp[bp["loja"].isin(lojas)]
 
@@ -724,6 +729,97 @@ A **Curva {curva_principal}** concentra **{fmt_pct(participacao_curva)}** dos pe
 - Pedidos anuais projetados: **{fmt_int(c2['Pedidos/ano'])}**
 """
         )
+
+    st.markdown("### Conciliação do consolidado")
+    st.caption(
+        "A conciliação compara o resultado calculado diretamente no consolidado com a soma "
+        "dos resultados por Perfil e Tipo Doc Vendas."
+    )
+
+    partes_conciliacao = []
+    for (perfil_parte, tipo_doc_parte), base_parte in bf.groupby(
+        ["perfil", "tipo_doc_vendas"], dropna=False
+    ):
+        if base_parte.empty:
+            continue
+        resumo_parte = resumo_mensal(base_parte)
+        cenarios_parte = calcular(base_parte, resumo_parte)
+        for _, linha_parte in cenarios_parte.iterrows():
+            partes_conciliacao.append({
+                "Perfil": perfil_parte,
+                "Tipo Doc Vendas": tipo_doc_parte,
+                "Cenário": linha_parte["Cenário"],
+                "Pedidos/mês": float(linha_parte["Pedidos/mês"]),
+                "Custo/ano": float(linha_parte["Custo/ano"]),
+            })
+
+    df_partes_conciliacao = pd.DataFrame(partes_conciliacao)
+    if not df_partes_conciliacao.empty:
+        soma_partes = df_partes_conciliacao.groupby("Cenário", as_index=False).agg(
+            **{
+                "Soma segmentos - Pedidos/mês": ("Pedidos/mês", "sum"),
+                "Soma segmentos - Custo/ano": ("Custo/ano", "sum"),
+            }
+        )
+        conciliacao = cenarios[["Cenário", "Pedidos/mês", "Custo/ano"]].merge(
+            soma_partes, on="Cenário", how="left"
+        ).rename(columns={
+            "Pedidos/mês": "Consolidado - Pedidos/mês",
+            "Custo/ano": "Consolidado - Custo/ano",
+        })
+        conciliacao["Diferença Pedidos/mês"] = (
+            conciliacao["Soma segmentos - Pedidos/mês"]
+            - conciliacao["Consolidado - Pedidos/mês"]
+        )
+        conciliacao["Diferença Custo/ano"] = (
+            conciliacao["Soma segmentos - Custo/ano"]
+            - conciliacao["Consolidado - Custo/ano"]
+        )
+        tolerancia = 0.01
+        conciliacao["Status"] = conciliacao.apply(
+            lambda r: "OK" if abs(r["Diferença Pedidos/mês"]) < tolerancia
+            and abs(r["Diferença Custo/ano"]) < tolerancia else "REVISAR",
+            axis=1,
+        )
+        st.dataframe(
+            conciliacao.style.format({
+                "Consolidado - Pedidos/mês": lambda v: f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                "Soma segmentos - Pedidos/mês": lambda v: f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                "Diferença Pedidos/mês": lambda v: f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                "Consolidado - Custo/ano": brl,
+                "Soma segmentos - Custo/ano": brl,
+                "Diferença Custo/ano": brl,
+            }).map(
+                lambda v: "background-color:#EAF7EF;color:#1F7A45;font-weight:bold"
+                if v == "OK" else (
+                    "background-color:#FDECEC;color:#B42318;font-weight:bold" if v == "REVISAR" else ""
+                ),
+                subset=["Status"],
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        if (conciliacao["Status"] == "OK").all():
+            st.success(
+                "Conciliação concluída: o consolidado coincide com a soma dos segmentos "
+                "em todos os cenários, dentro da tolerância de cálculo."
+            )
+        else:
+            st.warning(
+                "Há diferença entre o consolidado e a soma dos segmentos. Verifique se as "
+                "telas comparadas usam exatamente os mesmos filtros de ano, mês, perfil, "
+                "Tipo Doc Vendas, centro de distribuição e unicidade do pedido."
+            )
+
+        with st.expander("Ver composição por Perfil e Tipo Doc Vendas"):
+            st.dataframe(
+                df_partes_conciliacao.style.format({
+                    "Pedidos/mês": lambda v: f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                    "Custo/ano": brl,
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
 
     st.markdown("### Recomendação gerencial")
     if economia_c1 > economia_c2 and economia_c1 > 0:
