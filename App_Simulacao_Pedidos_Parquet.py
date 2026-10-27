@@ -141,7 +141,7 @@ def preparar(df):
         "loja_sap": ["LOJA (SAP)"],
         "perfil_origem": ["SUB_CANAL"],
         "centro_distribuicao": ["CD Origem", "Codigo CD"],
-        "uf": ["UF_DEST", "UF", "Estado"],
+        "uf_destino": ["UF_DEST"],
         "pedido": ["PEDIDO"],
         "tipo_ov": ["Tipo da OV"],
         "competencia": ["Data Logística"],
@@ -161,7 +161,7 @@ def preparar(df):
     # A coluna operacional "loja" será definida pela opção de visualização escolhida pelo usuário.
     b["loja"] = b["cod_cliente"]
     b["centro_distribuicao"] = b["centro_distribuicao"].fillna("").astype(str).str.strip().str.title()
-    b["uf"] = b["uf"].fillna("").astype(str).str.strip().str.upper()
+    b["uf_destino"] = b["uf_destino"].fillna("").astype(str).str.strip().str.upper()
     b["pedido"] = b["pedido"].fillna("").astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
     b["tipo_ov"] = b["tipo_ov"].map(normalizar)
     b["perfil_origem"] = b["perfil_origem"].map(normalizar)
@@ -222,8 +222,8 @@ def tabela_pedidos_por_uf(base, tipos_ov_selecionados):
             return pd.DataFrame(columns=["UF", "Quantidade de Pedidos"])
         return pd.DataFrame(columns=["UF", "APARELHO", "MISTO", "SIMCARD", "TOTAL"])
 
-    dados = base[["uf", "pedido", "tipo_ov"]].copy()
-    dados["UF"] = dados["uf"].fillna("").astype(str).str.strip().str.upper()
+    dados = base[["uf_destino", "pedido", "tipo_ov"]].copy()
+    dados["UF"] = dados["uf_destino"].fillna("").astype(str).str.strip().str.upper()
     dados.loc[dados["UF"].eq(""), "UF"] = "NÃO INFORMADO"
     dados["tipo_ov"] = dados["tipo_ov"].fillna("").astype(str).str.strip().str.upper()
     dados = dados.drop_duplicates(subset=["UF", "pedido", "tipo_ov"])
@@ -260,7 +260,7 @@ def tabela_pedidos_por_uf(base, tipos_ov_selecionados):
 def exibir_tabela_pedidos_por_uf(base, tipos_ov_selecionados, chave):
     tabela = tabela_pedidos_por_uf(base, tipos_ov_selecionados)
     colunas_numericas = [c for c in tabela.columns if c != "UF"]
-    st.markdown("#### Quantidade de pedidos por UF")
+    st.markdown("#### Quantidade de pedidos por UF Destino")
     st.dataframe(
         tabela.style
         .format({c: lambda v: f"{int(v):,}".replace(",", ".") for c in colunas_numericas})
@@ -369,7 +369,7 @@ def excel_saida(resumo, cenarios, curva_abc, detalhe_curva, detalhe, tabela_uf):
         curva_abc.to_excel(w, "Curva ABC", index=False)
         detalhe_curva.to_excel(w, "Curva ABC por Loja", index=False)
         detalhe.to_excel(w, "Pedidos Unicos", index=False)
-        tabela_uf.to_excel(w, "Pedidos por UF", index=False)
+        tabela_uf.to_excel(w, "Pedidos por UF Destino", index=False)
         wb = w.book
         head = wb.add_format({"bold":True,"bg_color":"#172B4D","font_color":"white"})
         moeda = wb.add_format({"num_format":'R$ #,##0.00;[Red](R$ #,##0.00);-'})
@@ -383,12 +383,12 @@ def excel_saida(resumo, cenarios, curva_abc, detalhe_curva, detalhe, tabela_uf):
         w.sheets["Comparativo Financeiro"].set_column(4,5,18,moeda)
         w.sheets["Curva ABC"].set_column(3,3,14,wb.add_format({"num_format":"0%"}))
         w.sheets["Curva ABC por Loja"].set_column(3,3,22)
-        w.sheets["Pedidos por UF"].set_column(0,0,18)
-        w.sheets["Pedidos por UF"].set_column(1,w.sheets["Pedidos por UF"].dim_colmax,20,wb.add_format({"num_format":"#,##0"}))
+        w.sheets["Pedidos por UF Destino"].set_column(0,0,18)
+        w.sheets["Pedidos por UF Destino"].set_column(1,w.sheets["Pedidos por UF Destino"].dim_colmax,20,wb.add_format({"num_format":"#,##0"}))
         ultima_linha_uf = len(tabela_uf)
         if ultima_linha_uf > 0:
             formato_total = wb.add_format({"bold":True,"bg_color":"#BFE6F5","border":1})
-            w.sheets["Pedidos por UF"].set_row(ultima_linha_uf,None,formato_total)
+            w.sheets["Pedidos por UF Destino"].set_row(ultima_linha_uf,None,formato_total)
     return out.getvalue()
 
 
