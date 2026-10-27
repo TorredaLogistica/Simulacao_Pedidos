@@ -215,57 +215,71 @@ def resumo_mensal(base):
     r["Soma de Custo Faturamento"] = r["custo"]
     return r[["Mês do pedido", "Contagem Número do pedido", "Soma de Custo Faturamento"]]
 
-def resumo_pedidos_por_uf(base):
-    """Resume a quantidade de pedidos únicos por UF na seleção atual."""
-    colunas = ["UF", "Quantidade de Pedidos"]
-    if base.empty or "uf" not in base.columns:
-        return pd.DataFrame(columns=colunas)
-    dados = base[["uf", "pedido"]].copy()
+def tabela_pedidos_por_uf(base, tipos_ov_selecionados):
+    """Cria a tabela por UF conforme a seleção do filtro Tipo da OV."""
+    if base.empty:
+        if tipos_ov_selecionados:
+            return pd.DataFrame(columns=["UF", "Quantidade de Pedidos"])
+        return pd.DataFrame(columns=["UF", "APARELHO", "MISTO", "SIMCARD", "TOTAL"])
+
+    dados = base[["uf", "pedido", "tipo_ov"]].copy()
     dados["UF"] = dados["uf"].fillna("").astype(str).str.strip().str.upper()
     dados.loc[dados["UF"].eq(""), "UF"] = "NÃO INFORMADO"
-    resumo_uf = (
-        dados.drop_duplicates(subset=["UF", "pedido"])
-        .groupby("UF", as_index=False)
-        .agg(**{"Quantidade de Pedidos": ("pedido", "nunique")})
-        .sort_values("UF")
-        .reset_index(drop=True)
-    )
-    resumo_uf["Quantidade de Pedidos"] = resumo_uf["Quantidade de Pedidos"].astype(int)
-    return resumo_uf[colunas]
+    dados["tipo_ov"] = dados["tipo_ov"].fillna("").astype(str).str.strip().str.upper()
+    dados = dados.drop_duplicates(subset=["UF", "pedido", "tipo_ov"])
+
+    if tipos_ov_selecionados:
+        tabela = (
+            dados.groupby("UF", as_index=False)
+            .agg(**{"Quantidade de Pedidos": ("pedido", "nunique")})
+            .sort_values("UF")
+            .reset_index(drop=True)
+        )
+        total = int(dados["pedido"].nunique())
+        return pd.concat([
+            tabela,
+            pd.DataFrame([{"UF": "Total Geral", "Quantidade de Pedidos": total}]),
+        ], ignore_index=True)
+
+    categorias = ["APARELHO", "MISTO", "SIMCARD"]
+    dados = dados[dados["tipo_ov"].isin(categorias)].copy()
+    pivot = dados.pivot_table(
+        index="UF", columns="tipo_ov", values="pedido", aggfunc="nunique", fill_value=0
+    ).reset_index()
+    for categoria in categorias:
+        if categoria not in pivot.columns:
+            pivot[categoria] = 0
+    pivot = pivot[["UF"] + categorias].sort_values("UF").reset_index(drop=True)
+    pivot[categorias] = pivot[categorias].astype(int)
+    pivot["TOTAL"] = pivot[categorias].sum(axis=1)
+    total_geral = {"UF": "Total Geral"}
+    total_geral.update({coluna: int(pivot[coluna].sum()) for coluna in categorias + ["TOTAL"]})
+    return pd.concat([pivot, pd.DataFrame([total_geral])], ignore_index=True)
 
 
-def exibir_tabela_pedidos_por_uf(base, chave):
-    """Exibe tabela por UF com Total Geral no padrão do indicador."""
-    resumo_uf = resumo_pedidos_por_uf(base)
-    total = int(resumo_uf["Quantidade de Pedidos"].sum()) if not resumo_uf.empty else 0
-    tabela_uf = pd.concat([
-        resumo_uf,
-        pd.DataFrame([{"UF": "Total Geral", "Quantidade de Pedidos": total}]),
-    ], ignore_index=True)
+def exibir_tabela_pedidos_por_uf(base, tipos_ov_selecionados, chave):
+    tabela = tabela_pedidos_por_uf(base, tipos_ov_selecionados)
+    colunas_numericas = [c for c in tabela.columns if c != "UF"]
     st.markdown("#### Quantidade de pedidos por UF")
     st.dataframe(
-        tabela_uf.style
-        .format({"Quantidade de Pedidos": lambda v: f"{int(v):,}".replace(",", ".")})
+        tabela.style
+        .format({c: lambda v: f"{int(v):,}".replace(",", ".") for c in colunas_numericas})
         .apply(
             lambda linha: [
                 "background-color:#BFE6F5;font-weight:bold;color:#111827"
                 if linha["UF"] == "Total Geral" else ""
                 for _ in linha
-            ],
-            axis=1,
+            ], axis=1
         )
-        .set_properties(subset=["Quantidade de Pedidos"], **{"text-align": "right"})
+        .set_properties(subset=colunas_numericas, **{"text-align": "right"})
         .set_table_styles([
-            {"selector": "th", "props": [("background-color", "#BFE6F5"), ("color", "#111827"), ("font-weight", "bold")]},
+            {"selector": "th", "props": [("background-color", "#BFE6F5"), ("color", "#111827"), ("font-weight", "bold")]}
         ]),
         use_container_width=True,
         hide_index=True,
         key=chave,
-        column_config={
-            "UF": st.column_config.TextColumn("UF"),
-            "Quantidade de Pedidos": st.column_config.TextColumn("Quantidade de Pedidos"),
-        },
     )
+    return tabela
 
 
 def calcular_curva_abc(base):
@@ -347,7 +361,7 @@ def calcular(base, resumo):
     ]
     return pd.DataFrame(linhas, columns=["Cenário", "Pedidos/mês", "Custo/mês", "Pedidos/ano", "Custo/ano", "Economia/ano"])
 
-def excel_saida(resumo, cenarios, curva_abc, detalhe_curva, detalhe):
+def excel_saida(resumo, cenarios, curva_abc, detalhe_curva, detalhe, tabela_uf):
     out = io.BytesIO()
     with pd.ExcelWriter(out, engine="xlsxwriter") as w:
         resumo.to_excel(w, "Cenario Atual", index=False)
@@ -355,6 +369,7 @@ def excel_saida(resumo, cenarios, curva_abc, detalhe_curva, detalhe):
         curva_abc.to_excel(w, "Curva ABC", index=False)
         detalhe_curva.to_excel(w, "Curva ABC por Loja", index=False)
         detalhe.to_excel(w, "Pedidos Unicos", index=False)
+        tabela_uf.to_excel(w, "Pedidos por UF", index=False)
         wb = w.book
         head = wb.add_format({"bold":True,"bg_color":"#172B4D","font_color":"white"})
         moeda = wb.add_format({"num_format":'R$ #,##0.00;[Red](R$ #,##0.00);-'})
@@ -368,6 +383,12 @@ def excel_saida(resumo, cenarios, curva_abc, detalhe_curva, detalhe):
         w.sheets["Comparativo Financeiro"].set_column(4,5,18,moeda)
         w.sheets["Curva ABC"].set_column(3,3,14,wb.add_format({"num_format":"0%"}))
         w.sheets["Curva ABC por Loja"].set_column(3,3,22)
+        w.sheets["Pedidos por UF"].set_column(0,0,18)
+        w.sheets["Pedidos por UF"].set_column(1,w.sheets["Pedidos por UF"].dim_colmax,20,wb.add_format({"num_format":"#,##0"}))
+        ultima_linha_uf = len(tabela_uf)
+        if ultima_linha_uf > 0:
+            formato_total = wb.add_format({"bold":True,"bg_color":"#BFE6F5","border":1})
+            w.sheets["Pedidos por UF"].set_row(ultima_linha_uf,None,formato_total)
     return out.getvalue()
 
 
@@ -545,6 +566,7 @@ bf_cenarios = b_cenario_perfil if not lojas else b_cenario_perfil[
 resumo_cenarios = resumo_mensal(bf_cenarios)
 cenarios_fechados = calcular(bf_cenarios, resumo_cenarios)
 a_fechado, c1_fechado, c2_fechado = cenarios_fechados.iloc[0], cenarios_fechados.iloc[1], cenarios_fechados.iloc[2]
+tabela_uf_atual = tabela_pedidos_por_uf(bf, tipos_ov)
 
 st.caption(f"Filtro atual: Tipo da OV **{', '.join(tipos_ov) if tipos_ov else 'Todos'}** | Ano **{', '.join(map(str, anos)) if anos else 'Todos'}** | Mês **{', '.join(meses_selecionados) if meses_selecionados else 'Todos'}** | Perfil **{perfil}** | {rotulo_visao}: **{', '.join(lojas) if lojas else 'Todos'}** | Competência: **{coluna_competencia}**")
 
@@ -580,7 +602,7 @@ with aba1:
     r1.info(f"**Cenário Atual**  \nMédia mês: **{a_fechado['Pedidos/mês']:.0f} pedidos | {brl(a_fechado['Custo/mês'])}**  \nMédia Ano: **{a_fechado['Pedidos/ano']:.0f} pedidos | {brl(a_fechado['Custo/ano'])}**")
     r2.success(f"**Cenário 1: até 1 pedido/mês**  \nMédia mês: **{c1_fechado['Pedidos/mês']:.0f} pedido | {brl(c1_fechado['Custo/mês'])}**  \nMédia Ano: **{c1_fechado['Pedidos/ano']:.0f} pedidos | {brl(c1_fechado['Custo/ano'])}**  \nEconomia Ano: **{brl(c1_fechado['Economia/ano'])}**  \nEconomia Mês: **{brl(c1_fechado['Economia/ano'] / 12)}**")
     r3.warning(f"**Cenário 2: até 2 pedidos/mês**  \nMédia mês: **{c2_fechado['Pedidos/mês']:.0f} pedidos | {brl(c2_fechado['Custo/mês'])}**  \nMédia Ano: **{c2_fechado['Pedidos/ano']:.0f} pedidos | {brl(c2_fechado['Custo/ano'])}**  \nEconomia Ano: **{brl(c2_fechado['Economia/ano'])}**  \nEconomia Mês: **{brl(c2_fechado['Economia/ano'] / 12)}**")
-    exibir_tabela_pedidos_por_uf(bf, "tabela_uf_cenario_atual")
+    exibir_tabela_pedidos_por_uf(bf, tipos_ov, "tabela_uf_cenario_atual")
 
 with aba2:
     st.subheader("Comparativo financeiro")
@@ -697,7 +719,7 @@ with aba3:
                            excel_tabela(detalhe_material, "Por Material"),
                            "Detalhamento_por_Material.xlsx", use_container_width=True)
 
-    exibir_tabela_pedidos_por_uf(bf, "tabela_uf_detalhamento")
+    exibir_tabela_pedidos_por_uf(bf, tipos_ov, "tabela_uf_detalhamento")
 
 with aba4:
     st.subheader("Análise Gerencial para Tomada de Decisão")
@@ -913,5 +935,5 @@ A **Curva {curva_principal}** concentra **{fmt_pct(participacao_curva)}** dos pe
         "Os valores são projeções e devem ser validados com as áreas responsáveis antes da decisão final."
     )
 
-st.download_button("Baixar simulação em Excel",data=excel_saida(resumo,cenarios,curva_abc,detalhe_curva,bf),file_name="Simulacao_Pedidos_SIMCARD_2027.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+st.download_button("Baixar simulação em Excel",data=excel_saida(resumo,cenarios,curva_abc,detalhe_curva,bf,tabela_uf_atual),file_name="Simulacao_Pedidos_SIMCARD_2027.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
 st.caption("Cenário 1 limita a frequência a até 1 pedido por loja/mês. Cenário 2 limita a frequência a até 2 pedidos por loja/mês. Os cenários usam o valor unitário da coluna DA de cada loja e funcionam como limites máximos.")
