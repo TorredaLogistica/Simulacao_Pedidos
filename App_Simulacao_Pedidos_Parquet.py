@@ -257,8 +257,9 @@ def tabela_pedidos_por_uf(base, tipos_ov_selecionados):
     return pd.concat([pivot, pd.DataFrame([total_geral])], ignore_index=True)
 
 
-def exibir_tabela_pedidos_por_uf(base, tipos_ov_selecionados, chave):
-    tabela = tabela_pedidos_por_uf(base, tipos_ov_selecionados)
+def exibir_tabela_pedidos_por_uf(tabela):
+    """Exibe a tabela já calculada com a base final após todos os filtros."""
+    tabela = tabela.copy()
     colunas_numericas = [c for c in tabela.columns if c != "UF"]
     st.markdown("#### Quantidade de pedidos por UF Destino")
     st.dataframe(
@@ -277,7 +278,6 @@ def exibir_tabela_pedidos_por_uf(base, tipos_ov_selecionados, chave):
         ]),
         use_container_width=True,
         hide_index=True,
-        key=chave,
     )
     return tabela
 
@@ -534,7 +534,12 @@ lojas = st.sidebar.multiselect(
     default=[],
     placeholder=f"Selecione um ou mais valores de {rotulo_visao}",
 )
-bf = bp if not lojas else bp[bp["loja"].isin(lojas)]
+bf = (bp if not lojas else bp[bp["loja"].isin(lojas)]).copy()
+
+# Tabela por UF Destino calculada exclusivamente sobre a base final. Nesse ponto,
+# bf já recebeu Tipo da OV, Ano, Mês, pedido, unicidade, Tipo Doc Vendas,
+# Centro Distribuição, Perfil e Cód Cliente/LOJA (SAP).
+tabela_uf_atual = tabela_pedidos_por_uf(bf, tipos_ov)
 
 resumo = resumo_mensal(bf)
 cenarios = calcular(bf, resumo)
@@ -566,8 +571,6 @@ bf_cenarios = b_cenario_perfil if not lojas else b_cenario_perfil[
 resumo_cenarios = resumo_mensal(bf_cenarios)
 cenarios_fechados = calcular(bf_cenarios, resumo_cenarios)
 a_fechado, c1_fechado, c2_fechado = cenarios_fechados.iloc[0], cenarios_fechados.iloc[1], cenarios_fechados.iloc[2]
-tabela_uf_atual = tabela_pedidos_por_uf(bf, tipos_ov)
-
 st.caption(f"Filtro atual: Tipo da OV **{', '.join(tipos_ov) if tipos_ov else 'Todos'}** | Ano **{', '.join(map(str, anos)) if anos else 'Todos'}** | Mês **{', '.join(meses_selecionados) if meses_selecionados else 'Todos'}** | Perfil **{perfil}** | {rotulo_visao}: **{', '.join(lojas) if lojas else 'Todos'}** | Competência: **{coluna_competencia}**")
 
 m1,m2,m3,m4 = st.columns(4)
@@ -602,7 +605,7 @@ with aba1:
     r1.info(f"**Cenário Atual**  \nMédia mês: **{a_fechado['Pedidos/mês']:.0f} pedidos | {brl(a_fechado['Custo/mês'])}**  \nMédia Ano: **{a_fechado['Pedidos/ano']:.0f} pedidos | {brl(a_fechado['Custo/ano'])}**")
     r2.success(f"**Cenário 1: até 1 pedido/mês**  \nMédia mês: **{c1_fechado['Pedidos/mês']:.0f} pedido | {brl(c1_fechado['Custo/mês'])}**  \nMédia Ano: **{c1_fechado['Pedidos/ano']:.0f} pedidos | {brl(c1_fechado['Custo/ano'])}**  \nEconomia Ano: **{brl(c1_fechado['Economia/ano'])}**  \nEconomia Mês: **{brl(c1_fechado['Economia/ano'] / 12)}**")
     r3.warning(f"**Cenário 2: até 2 pedidos/mês**  \nMédia mês: **{c2_fechado['Pedidos/mês']:.0f} pedidos | {brl(c2_fechado['Custo/mês'])}**  \nMédia Ano: **{c2_fechado['Pedidos/ano']:.0f} pedidos | {brl(c2_fechado['Custo/ano'])}**  \nEconomia Ano: **{brl(c2_fechado['Economia/ano'])}**  \nEconomia Mês: **{brl(c2_fechado['Economia/ano'] / 12)}**")
-    exibir_tabela_pedidos_por_uf(bf, tipos_ov, "tabela_uf_cenario_atual")
+    exibir_tabela_pedidos_por_uf(tabela_uf_atual)
 
 with aba2:
     st.subheader("Comparativo financeiro")
@@ -719,7 +722,7 @@ with aba3:
                            excel_tabela(detalhe_material, "Por Material"),
                            "Detalhamento_por_Material.xlsx", use_container_width=True)
 
-    exibir_tabela_pedidos_por_uf(bf, tipos_ov, "tabela_uf_detalhamento")
+    exibir_tabela_pedidos_por_uf(tabela_uf_atual)
 
 with aba4:
     st.subheader("Análise Gerencial para Tomada de Decisão")
