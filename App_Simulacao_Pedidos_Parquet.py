@@ -141,6 +141,7 @@ def preparar(df):
         "loja_sap": ["LOJA (SAP)"],
         "perfil_origem": ["SUB_CANAL"],
         "centro_distribuicao": ["CD Origem", "Codigo CD"],
+        "uf": ["UF_DEST", "UF", "Estado"],
         "pedido": ["PEDIDO"],
         "tipo_ov": ["Tipo da OV"],
         "competencia": ["Data Logística"],
@@ -160,6 +161,7 @@ def preparar(df):
     # A coluna operacional "loja" será definida pela opção de visualização escolhida pelo usuário.
     b["loja"] = b["cod_cliente"]
     b["centro_distribuicao"] = b["centro_distribuicao"].fillna("").astype(str).str.strip().str.title()
+    b["uf"] = b["uf"].fillna("").astype(str).str.strip().str.upper()
     b["pedido"] = b["pedido"].fillna("").astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
     b["tipo_ov"] = b["tipo_ov"].map(normalizar)
     b["perfil_origem"] = b["perfil_origem"].map(normalizar)
@@ -212,6 +214,59 @@ def resumo_mensal(base):
     r["Contagem Número do pedido"] = r["qtd"]
     r["Soma de Custo Faturamento"] = r["custo"]
     return r[["Mês do pedido", "Contagem Número do pedido", "Soma de Custo Faturamento"]]
+
+def resumo_pedidos_por_uf(base):
+    """Resume a quantidade de pedidos únicos por UF na seleção atual."""
+    colunas = ["UF", "Quantidade de Pedidos"]
+    if base.empty or "uf" not in base.columns:
+        return pd.DataFrame(columns=colunas)
+    dados = base[["uf", "pedido"]].copy()
+    dados["UF"] = dados["uf"].fillna("").astype(str).str.strip().str.upper()
+    dados.loc[dados["UF"].eq(""), "UF"] = "NÃO INFORMADO"
+    resumo_uf = (
+        dados.drop_duplicates(subset=["UF", "pedido"])
+        .groupby("UF", as_index=False)
+        .agg(**{"Quantidade de Pedidos": ("pedido", "nunique")})
+        .sort_values("UF")
+        .reset_index(drop=True)
+    )
+    resumo_uf["Quantidade de Pedidos"] = resumo_uf["Quantidade de Pedidos"].astype(int)
+    return resumo_uf[colunas]
+
+
+def exibir_tabela_pedidos_por_uf(base, chave):
+    """Exibe tabela por UF com Total Geral no padrão do indicador."""
+    resumo_uf = resumo_pedidos_por_uf(base)
+    total = int(resumo_uf["Quantidade de Pedidos"].sum()) if not resumo_uf.empty else 0
+    tabela_uf = pd.concat([
+        resumo_uf,
+        pd.DataFrame([{"UF": "Total Geral", "Quantidade de Pedidos": total}]),
+    ], ignore_index=True)
+    st.markdown("#### Quantidade de pedidos por UF")
+    st.dataframe(
+        tabela_uf.style
+        .format({"Quantidade de Pedidos": lambda v: f"{int(v):,}".replace(",", ".")})
+        .apply(
+            lambda linha: [
+                "background-color:#BFE6F5;font-weight:bold;color:#111827"
+                if linha["UF"] == "Total Geral" else ""
+                for _ in linha
+            ],
+            axis=1,
+        )
+        .set_properties(subset=["Quantidade de Pedidos"], **{"text-align": "right"})
+        .set_table_styles([
+            {"selector": "th", "props": [("background-color", "#BFE6F5"), ("color", "#111827"), ("font-weight", "bold")]},
+        ]),
+        use_container_width=True,
+        hide_index=True,
+        key=chave,
+        column_config={
+            "UF": st.column_config.TextColumn("UF"),
+            "Quantidade de Pedidos": st.column_config.TextColumn("Quantidade de Pedidos"),
+        },
+    )
+
 
 def calcular_curva_abc(base):
     """Classifica cada pedido pela Quantidade prevista da guia Detalhamento."""
@@ -525,6 +580,7 @@ with aba1:
     r1.info(f"**Cenário Atual**  \nMédia mês: **{a_fechado['Pedidos/mês']:.0f} pedidos | {brl(a_fechado['Custo/mês'])}**  \nMédia Ano: **{a_fechado['Pedidos/ano']:.0f} pedidos | {brl(a_fechado['Custo/ano'])}**")
     r2.success(f"**Cenário 1: até 1 pedido/mês**  \nMédia mês: **{c1_fechado['Pedidos/mês']:.0f} pedido | {brl(c1_fechado['Custo/mês'])}**  \nMédia Ano: **{c1_fechado['Pedidos/ano']:.0f} pedidos | {brl(c1_fechado['Custo/ano'])}**  \nEconomia Ano: **{brl(c1_fechado['Economia/ano'])}**  \nEconomia Mês: **{brl(c1_fechado['Economia/ano'] / 12)}**")
     r3.warning(f"**Cenário 2: até 2 pedidos/mês**  \nMédia mês: **{c2_fechado['Pedidos/mês']:.0f} pedidos | {brl(c2_fechado['Custo/mês'])}**  \nMédia Ano: **{c2_fechado['Pedidos/ano']:.0f} pedidos | {brl(c2_fechado['Custo/ano'])}**  \nEconomia Ano: **{brl(c2_fechado['Economia/ano'])}**  \nEconomia Mês: **{brl(c2_fechado['Economia/ano'] / 12)}**")
+    exibir_tabela_pedidos_por_uf(bf, "tabela_uf_cenario_atual")
 
 with aba2:
     st.subheader("Comparativo financeiro")
@@ -640,6 +696,8 @@ with aba3:
         st.download_button("Baixar visão por material em Excel",
                            excel_tabela(detalhe_material, "Por Material"),
                            "Detalhamento_por_Material.xlsx", use_container_width=True)
+
+    exibir_tabela_pedidos_por_uf(bf, "tabela_uf_detalhamento")
 
 with aba4:
     st.subheader("Análise Gerencial para Tomada de Decisão")
