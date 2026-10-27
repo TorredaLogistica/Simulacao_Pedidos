@@ -226,16 +226,17 @@ def tabela_pedidos_por_uf(base, tipos_ov_selecionados):
     dados["UF"] = dados["uf_destino"].fillna("").astype(str).str.strip().str.upper()
     dados.loc[dados["UF"].eq(""), "UF"] = "NÃO INFORMADO"
     dados["tipo_ov"] = dados["tipo_ov"].fillna("").astype(str).str.strip().str.upper()
-    dados = dados.drop_duplicates(subset=["UF", "pedido", "tipo_ov"])
 
+    # A base recebida já reflete o checkbox Considerar apenas pedidos únicos.
+    # Quando o checkbox estiver desmarcado, cada linha filtrada deve ser contada.
     if tipos_ov_selecionados:
         tabela = (
             dados.groupby("UF", as_index=False)
-            .agg(**{"Quantidade de Pedidos": ("pedido", "nunique")})
+            .agg(**{"Quantidade de Pedidos": ("pedido", "size")})
             .sort_values("UF")
             .reset_index(drop=True)
         )
-        total = int(dados["pedido"].nunique())
+        total = int(len(dados))
         return pd.concat([
             tabela,
             pd.DataFrame([{"UF": "Total Geral", "Quantidade de Pedidos": total}]),
@@ -244,7 +245,7 @@ def tabela_pedidos_por_uf(base, tipos_ov_selecionados):
     categorias = ["APARELHO", "MISTO", "SIMCARD"]
     dados = dados[dados["tipo_ov"].isin(categorias)].copy()
     pivot = dados.pivot_table(
-        index="UF", columns="tipo_ov", values="pedido", aggfunc="nunique", fill_value=0
+        index="UF", columns="tipo_ov", values="pedido", aggfunc="size", fill_value=0
     ).reset_index()
     for categoria in categorias:
         if categoria not in pivot.columns:
