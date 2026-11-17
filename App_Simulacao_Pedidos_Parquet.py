@@ -1,6 +1,7 @@
 import io
 import re
 import unicodedata
+import time
 from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
@@ -21,27 +22,38 @@ def brl(v):
     return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-@st.cache_data(show_spinner=False)
 def ler_guia_parquet(arq, nome_guia, colunas=None):
-    """Lê uma guia lógica do Parquet único criado a partir do Excel."""
-    df = pd.read_parquet(
-        arq,
-        engine="pyarrow",
-        filters=[("__guia_origem__", "==", nome_guia)],
-    )
-    df = df.drop(columns=["__guia_origem__", "__linha_origem__"], errors="ignore")
-    df = df.dropna(axis=1, how="all")
-    if colunas is not None:
-        faltantes = [coluna for coluna in colunas if coluna not in df.columns]
-        if faltantes:
-            raise ValueError(
-                f"Coluna(s) não encontrada(s) na guia {nome_guia}: {', '.join(faltantes)}"
+    """Lê uma guia lógica do Parquet com tentativas para atualizações simultâneas."""
+    ultimo_erro = None
+    for tentativa in range(4):
+        try:
+            tamanho_antes = arq.stat().st_size
+            if tamanho_antes <= 8:
+                raise OSError("Arquivo Parquet vazio ou ainda em atualização.")
+            df = pd.read_parquet(
+                arq, engine="pyarrow",
+                filters=[("__guia_origem__", "==", nome_guia)],
             )
-        df = df[colunas].copy()
-    return df
+            if tamanho_antes != arq.stat().st_size:
+                raise OSError("A base foi alterada durante a leitura.")
+            df = df.drop(columns=["__guia_origem__", "__linha_origem__"], errors="ignore")
+            df = df.dropna(axis=1, how="all")
+            if colunas is not None:
+                faltantes = [c for c in colunas if c not in df.columns]
+                if faltantes:
+                    raise ValueError(f"Coluna(s) não encontrada(s) na guia {nome_guia}: {', '.join(faltantes)}")
+                df = df[colunas].copy()
+            return df
+        except (OSError, EOFError, PermissionError) as erro:
+            ultimo_erro = erro
+            if tentativa < 3:
+                time.sleep(1.5)
+    raise RuntimeError(
+        "Não foi possível ler a base após 4 tentativas. Aguarde a atualização terminar e tente novamente. "
+        f"Detalhe: {ultimo_erro}"
+    )
 
 
-@st.cache_data(show_spinner=False)
 def ler_base(arq):
     return ler_guia_parquet(arq, "Base").astype("string")
 
@@ -95,7 +107,6 @@ def carregar_descricoes_tipo_doc(caminho):
         if codigo and descricao
     }
 
-@st.cache_data(show_spinner=False)
 def ler_detalhamento_material(arq):
     colunas = ["Documento SD", "Item (SD)", "Material", "Texto breve material",
                "Quantidade prevista", "UMB", "TIPO DA OV"]
@@ -181,7 +192,7 @@ def preparar(df):
 
     mascara_perfil = b["perfil"].isin(["AA", "LP"])
     mascara_chaves = (b["cod_cliente"].ne("") | b["loja_sap"].ne("")) & b["pedido"].ne("")
-    # Considera automaticamente todos os meses com datas válidas presentes na base.
+    # Considera automaticamente todos os meses válidos presentes na base.
     mascara_data = datas.notna()
     mascara_custo = b["custo_faturamento"].gt(0)
     mascara_tipo_ov = b["tipo_ov"].ne("")
@@ -419,12 +430,6 @@ if not arq.exists():
     st.stop()
 
 try:
-    # Identifica automaticamente a substituição/atualização do Parquet.
-    versao_base = (arq.stat().st_mtime_ns, arq.stat().st_size)
-    if st.session_state.get("chave_cache_base") != versao_base:
-        st.cache_data.clear()
-        st.session_state["chave_cache_base"] = versao_base
-
     with st.spinner("Processando a base..."):
         df = ler_base(arq)
         pedidos, coluna_competencia, auditoria = preparar(df)
@@ -435,7 +440,11 @@ try:
         pedidos = pedidos.merge(qtd_por_pedido, on="pedido", how="left")
         pedidos["qtd_simcards_pedido"] = pedidos["qtd_simcards_pedido"].fillna(0.0)
 except Exception as e:
-    st.error(f"Erro ao processar a base: {e}")
+    st.error("Não foi possível carregar a base neste momento.")
+    st.code(str(e), language="text")
+    st.info("A base pode estar sendo substituída durante a leitura. Aguarde alguns segundos e tente novamente.")
+    if st.button("Tentar novamente", type="primary"):
+        st.rerun()
     st.stop()
 
 if pedidos.empty:
