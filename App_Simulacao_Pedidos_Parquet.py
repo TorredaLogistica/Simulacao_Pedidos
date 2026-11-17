@@ -181,7 +181,8 @@ def preparar(df):
 
     mascara_perfil = b["perfil"].isin(["AA", "LP"])
     mascara_chaves = (b["cod_cliente"].ne("") | b["loja_sap"].ne("")) & b["pedido"].ne("")
-    mascara_data = datas.notna() & datas.le(pd.Timestamp(2026, 7, 31))
+    # Considera automaticamente todos os meses com datas válidas presentes na base.
+    mascara_data = datas.notna()
     mascara_custo = b["custo_faturamento"].gt(0)
     mascara_tipo_ov = b["tipo_ov"].ne("")
     auditoria = {
@@ -418,6 +419,12 @@ if not arq.exists():
     st.stop()
 
 try:
+    # Identifica automaticamente a substituição/atualização do Parquet.
+    versao_base = (arq.stat().st_mtime_ns, arq.stat().st_size)
+    if st.session_state.get("chave_cache_base") != versao_base:
+        st.cache_data.clear()
+        st.session_state["chave_cache_base"] = versao_base
+
     with st.spinner("Processando a base..."):
         df = ler_base(arq)
         pedidos, coluna_competencia, auditoria = preparar(df)
